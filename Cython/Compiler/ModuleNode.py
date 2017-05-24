@@ -739,27 +739,15 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
         code.putln_openmp("#include <omp.h>")
 
     def generate_filename_table(self, code):
-        import os.path as path
-
-        full_module_path = path.join(*self.full_module_name.split('.'))
-        module_abspath = path.splitext(path.abspath(
-            self.compilation_source.source_desc.get_filenametable_entry()))[0]
-        root_path = module_abspath[:-len(full_module_path)]
-        workdir = path.abspath(os.getcwd()) + os.sep
-        if root_path.startswith(workdir):
-            # prefer relative paths to current directory (which is most likely the project root)
-            root_path = workdir
-
+        from os.path import isabs, basename
         code.putln("")
         code.putln("static const char *%s[] = {" % Naming.filetable_cname)
         if code.globalstate.filename_list:
             for source_desc in code.globalstate.filename_list:
-                file_abspath = path.abspath(source_desc.get_filenametable_entry())
-                if file_abspath.startswith(root_path):
-                    filename = file_abspath[len(root_path):]
-                else:
-                    filename = path.basename(file_abspath)
-                escaped_filename = filename.replace("\\", "\\\\").replace('"', r'\"')
+                file_path = source_desc.get_filenametable_entry()
+                if isabs(file_path):
+                    file_path = basename(file_path)  # never include absolute paths
+                escaped_filename = file_path.replace("\\", "\\\\").replace('"', r'\"')
                 code.putln('"%s",' % escaped_filename)
         else:
             # Some C compilers don't like an empty array
@@ -1507,10 +1495,9 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
 
         for entry in py_attrs:
             var_code = "p->%s" % entry.cname
+            var_as_pyobject = PyrexTypes.typecast(py_object_type, entry.type, var_code)
             code.putln("if (%s) {" % var_code)
-            if entry.type.is_extension_type:
-                var_code = "((PyObject*)%s)" % var_code
-            code.putln("e = (*v)(%s, a); if (e) return e;" % var_code)
+            code.putln("e = (*v)(%s, a); if (e) return e;" % var_as_pyobject)
             code.putln("}")
 
         # Traverse buffer exporting objects.
