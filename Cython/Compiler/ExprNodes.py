@@ -1692,7 +1692,8 @@ class NewExprNode(AtomicExprNode):
         self.cpp_check(env)
         constructor = type.scope.lookup(u'<init>')
         if constructor is None:
-            func_type = PyrexTypes.CFuncType(type, [], exception_check='+')
+            func_type = PyrexTypes.CFuncType(
+                type, [], exception_check='+', nogil=True)
             type.scope.declare_cfunction(u'<init>', func_type, self.pos)
             constructor = type.scope.lookup(u'<init>')
         self.class_type = type
@@ -1857,6 +1858,9 @@ class NameNode(AtomicExprNode):
             self.entry = env.declare_var(self.name, type, self.pos)
         if self.entry.is_declared_generic:
             self.result_ctype = py_object_type
+        if self.entry.as_module:
+            # cimported modules namespace can shadow actual variables
+            self.entry.is_variable = 1
 
     def analyse_types(self, env):
         self.initialized_check = env.directives['initializedcheck']
@@ -1962,9 +1966,15 @@ class NameNode(AtomicExprNode):
             or entry.is_cpp_class):
                 if self.entry.as_variable:
                     self.entry = self.entry.as_variable
-                else:
+                elif not self.is_cython_module:
                     error(self.pos,
                           "'%s' is not a constant, variable or function identifier" % self.name)
+
+    def is_cimported_module_without_shadow(self, env):
+        if self.is_cython_module or self.cython_attribute:
+            return False
+        entry = self.entry or env.lookup(self.name)
+        return entry.as_module and not entry.is_variable
 
     def is_simple(self):
         #  If it's not a C variable, it'll be in a temp.
@@ -6373,6 +6383,9 @@ class AttributeNode(ExprNode):
                     entry.is_cglobal or entry.is_cfunction
                     or entry.is_type or entry.is_const):
                 return self.as_name_node(env, entry, target)
+            if self.is_cimported_module_without_shadow(env):
+                error(self.pos, "cimported module has no attribute '%s'" % self.attribute)
+                return self
         return None
 
     def analyse_as_type_attribute(self, env):
@@ -6565,7 +6578,10 @@ class AttributeNode(ExprNode):
         self.type = py_object_type
         self.is_py_attr = 1
         if not obj_type.is_pyobject and not obj_type.is_error:
-            if obj_type.can_coerce_to_pyobject(env):
+            # Expose python methods for immutable objects.
+            if (obj_type.is_string or obj_type.is_cpp_string
+                or obj_type.is_buffer or obj_type.is_numeric
+                or (obj_type.is_struct and obj_type.can_coerce_to_pyobject(env))):
                 if not immutable_obj:
                     self.obj = self.obj.coerce_to_pyobject(env)
             elif (obj_type.is_cfunction and (self.obj.is_name or self.obj.is_attribute)
@@ -6608,6 +6624,9 @@ class AttributeNode(ExprNode):
             self.gil_error()
 
     gil_message = "Accessing Python attribute"
+
+    def is_cimported_module_without_shadow(self, env):
+        return self.obj.is_cimported_module_without_shadow(env)
 
     def is_simple(self):
         if self.obj:
@@ -10136,7 +10155,9 @@ class CythonArrayNode(ExprNode):
         return self.get_cython_array_type(env)
 
     def get_cython_array_type(self, env):
-        return env.global_scope().context.cython_scope.viewscope.lookup("array").type
+        cython_scope = env.global_scope().context.cython_scope
+        cython_scope.load_cythonscope()
+        return cython_scope.viewscope.lookup("array").type
 
     def generate_result_code(self, code):
         from . import Buffer

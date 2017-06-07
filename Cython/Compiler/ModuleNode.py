@@ -702,6 +702,7 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
         code.putln('static PyObject *%s;' % env.module_cname)
         code.putln('static PyObject *%s;' % env.module_dict_cname)
         code.putln('static PyObject *%s;' % Naming.builtins_cname)
+        code.putln('static PyObject *%s;' % Naming.cython_runtime_cname)
         code.putln('static PyObject *%s;' % Naming.empty_tuple)
         code.putln('static PyObject *%s;' % Naming.empty_bytes)
         code.putln('static PyObject *%s;' % Naming.empty_unicode)
@@ -1349,8 +1350,9 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
             else:
                 finalised_check = (
                     '(!PyType_IS_GC(Py_TYPE(o)) || !_PyGC_FINALIZED(o))')
-            code.putln("if (unlikely(Py_TYPE(o)->tp_finalize) && %s) {" %
-                       finalised_check)
+            code.putln(
+                "if (unlikely(PyType_HasFeature(Py_TYPE(o), Py_TPFLAGS_HAVE_FINALIZE)"
+                " && Py_TYPE(o)->tp_finalize) && %s) {" % finalised_check)
             # if instance was resurrected by finaliser, return
             code.putln("if (PyObject_CallFinalizerFromDealloc(o)) return;")
             code.putln("}")
@@ -2476,6 +2478,10 @@ class ModuleNode(Nodes.Node, Nodes.BlockNode):
             '%s = PyImport_AddModule(__Pyx_BUILTIN_MODULE_NAME); %s' % (
                 Naming.builtins_cname,
                 code.error_goto_if_null(Naming.builtins_cname, self.pos)))
+        code.putln(
+            '%s = PyImport_AddModule((char *) "cython_runtime"); %s' % (
+                Naming.cython_runtime_cname,
+                code.error_goto_if_null(Naming.cython_runtime_cname, self.pos)))
         code.putln('#if CYTHON_COMPILING_IN_PYPY')
         code.putln('Py_INCREF(%s);' % Naming.builtins_cname)
         code.putln('#endif')

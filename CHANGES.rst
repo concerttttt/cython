@@ -14,7 +14,7 @@ Features added
 
 * Support pyximport from zip files.
   Patch by Sergei Lebedev (Github issue #1485).
-  
+
 * IPython magic now respects `__all__` variable.  Also skips
   leading-underscore values (like `import *`).
   Patch by Syrtis Major (Github issue #1625).
@@ -23,6 +23,10 @@ Features added
   Patch by da-woods (Github issue #1648).
 
 * cdef classes now support pickling by default when possible.
+
+* The display of C lines in Cython tracebacks is now settable at runtime
+  via `import cython_runtime; cython_runtime.cline_in_traceback=True`.
+  The default has been changed to False.
 
 Bugs fixed
 ----------
@@ -44,6 +48,14 @@ Bugs fixed
 
 * File paths of code objects are now relative.
   Original patch by Jelmer Vernooij (Github issue #1565).
+
+Other changes
+-------------
+
+* The `unraisable_tracebacks` now defaults to `True`.
+
+* Coercion of C++ containers to Python is no longer automatic on attribute
+  access (Github issue #1521).
 
 
 0.25.2 (2016-12-08)
